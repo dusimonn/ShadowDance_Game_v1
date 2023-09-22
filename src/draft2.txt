@@ -1,0 +1,512 @@
+import bagel.*;
+import bagel.util.*;
+import java.io.FileReader;
+import java.io.BufferedReader;
+import java.io.IOException;
+
+/**
+ * Skeleton Code for SWEN20003 Project 1, Semester 2, 2023
+ * Please enter your name below
+ * @author
+ * Du-Simon Nguyen; 1352062
+ */
+public class ShadowDance extends AbstractGame  {
+    private final static int WINDOW_WIDTH = 1024;
+    private final static int WINDOW_HEIGHT = 768;
+    private final static int LANE_Y = 384;
+    private final static int NOTE_CENTRE = 657;
+    private final static int NOTE_Y = 100;
+    private final static int MAX_LANE_NOTE = 100;
+    private final static int MAX_LANE_HOLD = 20;
+    private final static int HOLD_Y = 24;
+    private final static int NOTE_SPEED = 4;
+    private final static int MSG_FRAME = 30;
+    private final static String GAME_TITLE = "SHADOW DANCE";
+    private final Image BACKGROUND_IMAGE = new Image("res/background.png");
+    private final Image LANE_DOWN = new Image("res/laneDown.png");
+    private final Image LANE_UP = new Image("res/laneUp.png");
+    private final Image LANE_RIGHT = new Image("res/laneRight.png");
+    private final Image LANE_LEFT = new Image("res/laneLeft.png");
+    private final Image NOTE_DOWN = new Image("res/noteDown.png");
+    private final Image NOTE_UP = new Image("res/noteUp.png");
+    private final Image NOTE_RIGHT = new Image("res/noteRight.png");
+    private final Image NOTE_LEFT = new Image("res/noteLeft.png");
+    private final Image HOLD_DOWN = new Image("res/holdNoteDown.png");
+    private final Image HOLD_UP = new Image("res/holdNoteUp.png");
+    private final Image HOLD_RIGHT = new Image("res/holdNoteRight.png");
+    private final Image HOLD_LEFT = new Image("res/holdNoteLeft.png");
+    private final Font bigFont = new Font("res/FSO8BITR.TTF", 64);
+    private final Font smallFont = new Font("res/FSO8BITR.TTF", 24);
+    private final Font scoreFont = new Font("res/FSO8BITR.TTF", 30);
+    private final Font messageFont = new Font("res/FSO8BITR.TTF", 40);
+    private final static Point scorePoint = new Point(35, 35);
+    private final Point shadowDance = new Point(220, 250);
+    private boolean startGame = true;
+    private int frameNum = 0;
+    private int score = 0;
+    private final static int WIN_SCORE = 150;
+    private final String[][] worldInfo = new String[4 * (MAX_LANE_HOLD + MAX_LANE_NOTE)][3];
+    /* Double array to hold all the info about the world level */
+    private final int worldLength;
+    private final Note[] notes = new Note[4 * (MAX_LANE_HOLD + MAX_LANE_NOTE)];
+
+    public ShadowDance(){
+        super(WINDOW_WIDTH, WINDOW_HEIGHT, GAME_TITLE);
+//      String worldFile = "res/level1.csv";
+      String worldFile = "res/test1.csv";
+//        String worldFile = "res/mylvl.csv";
+        worldLength = readCSV(worldFile);
+        /* load in all the notes into an array, start from index 4 as 0-3 are lanes */
+        storeNotes();
+    }
+
+    /**
+     * Method used to read file and create objects (you can change
+     * this method as you wish).
+     */
+    private int readCSV(String worldFile) {
+        int length = 0;
+
+        try (BufferedReader br =  new BufferedReader(new FileReader(worldFile))) {
+            String line;
+
+            while ((line = br.readLine()) != null) {
+
+                String[] lineSplit = line.split(",");
+                /* Store each csv field value into the array */
+                worldInfo[length][0] = lineSplit[0]; /* lane type */
+                worldInfo[length][1] = lineSplit[1]; /* type of note */
+                worldInfo[length][2] = lineSplit[2]; /* x-coord/frame-number */
+                length++;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return length;
+    }
+
+    /**
+     * The entry point for the program.
+     */
+    public static void main(String[] args) {
+        ShadowDance game = new ShadowDance();
+        game.run();
+    }
+
+    /**
+     * Performs a state update.
+     * Allows the game to exit when the escape key is pressed.
+     */
+    @Override
+    protected void update(Input input) {
+
+        BACKGROUND_IMAGE.draw(Window.getWidth()/2.0, Window.getHeight()/2.0);
+
+        if (input.wasPressed(Keys.ESCAPE)){
+            Window.close();
+        }
+
+        if (startGame) {
+            /* Draw in the menu texts */
+            drawMenu();
+            if (input.wasPressed(Keys.SPACE)) {
+                startGame = false;
+            }
+        }
+        else {
+            /* Draw in the lanes */
+            drawLanes();
+
+            /* Draw in and move the notes */
+            for (int i = 4; i < worldLength; i++) {
+                if (notes[i].getNoteFrame() <= frameNum) {
+                    notes[i] = drawNote(notes[i], (int)notes[i].getNoteCoord().x, (int)notes[i].getNoteCoord().y);
+                    /* Check if any arrow input was received and if it corresponded to a distance */
+                }
+                // System.out.println(notes[i]);
+            }
+
+            /* Check if input was received */
+            String inputDir = receivedInput(input);
+            String inputType = receivedType(input);
+
+            if (inputDir != null) {
+                /* Check which note input was for */
+                int minIndex = 0;
+                int minDist = Window.getHeight();
+                for (int i = 4; i < worldLength; i++) {
+                    int dist = -1;
+                    /* Only check notes which match the arrow input direction */
+                    if (notes[i].getNoteDirection().equals(inputDir)) {
+                        /* input note is normal */
+                        if (notes[i].getNoteType().equals("Normal") && !notes[i].isBeenPressed()) {
+                            dist = distance((int)notes[i].getNoteCoord().y, NOTE_CENTRE);
+                        }
+                        /* input note is hold */
+                        else if (notes[i].getNoteType().equals("Hold")) {
+                            /* input corresponds to the start of the hold note */
+                            if (inputType.equals("Pressed") && !notes[i].isBeenPressed()) {
+                                dist = distance((int)notes[i].getNoteCoord().y + 82, NOTE_CENTRE);
+                                System.out.println("a");
+                            }
+                            /* input corresponds to the release of the hold note */
+                            else if (inputType.equals("Released") && notes[i].isBeenPressed()){
+                                dist = distance((int)notes[i].getNoteCoord().y - 82, NOTE_CENTRE);
+                                System.out.println("b");
+                            }
+                        }
+                        if (dist < minDist && dist != -1) {
+                            minDist = dist;
+                            minIndex = i;
+                        }
+                    }
+                }
+                /* update the minNote and adjust score */
+                int points = calcPoints(minDist);
+                notes[minIndex] = updatePressedNote(minIndex, frameNum, points);
+                score += points;
+            }
+            /* Print the corresponding msg */
+            printScoreMsg(frameNum);
+            scoreFont.drawString("SCORE " + score, scorePoint.x, scorePoint.y);
+            frameNum++;
+        }
+
+        /* check whether game has ended by seeing if last note has left screen*/
+        if (gameEnd()) {
+            printEnd(score);
+        }
+
+    }
+    private void printEnd(int score) {
+        if (score >= WIN_SCORE) {
+            BACKGROUND_IMAGE.draw(Window.getWidth()/2.0, Window.getHeight()/2.0);
+            bigFont.drawString("CLEAR!",
+                    Window.getWidth()/2.0 - bigFont.getWidth("CLEAR!") / 2, Window.getHeight()/2.0);
+        } else {
+            BACKGROUND_IMAGE.draw(Window.getWidth()/2.0, Window.getHeight()/2.0);
+            bigFont.drawString("TRY AGAIN",
+                    Window.getWidth()/2.0 - bigFont.getWidth("TRY AGAIN") / 2, Window.getHeight()/2.0);
+        }
+    }
+    private boolean gameEnd() {
+        /* game has ended if either last note has been pressed and released (if it is hold) or has left the screen */
+        Note lastNote = notes[worldLength - 1];
+        if (lastNote.getNoteType().equals("Normal")) {
+            if (lastNote.isBeenPressed()) {
+                return true;
+            } else {
+                return lastNote.getNoteCoord().y > Window.getHeight();
+            }
+        }
+        else {
+            /* lastNote.getNoteType().equals("Hold") */
+            if (lastNote.isBeenPressed() && lastNote.isBeenReleased()) {
+                return true;
+            } else {
+                return lastNote.getNoteCoord().y - 82 > Window.getHeight();
+            }
+        }
+    }
+    private Note updatePressedNote(int i, int frameNum, int points) {
+        /* Change the note.BeenPressed to true, capture frame which msg should print until and corresponding points */
+        /* Only change if the distance was actually close enough to account for any point changes */
+        if (points != 0) {
+            /* Pressed note was a normal note */
+            if (notes[i].getNoteType().equals("Normal") && !notes[i].isBeenPressed()) {
+                notes[i].setPressed(true);
+                notes[i].setStartMsgFrame(frameNum);
+                notes[i].setEndMsgFrame(frameNum + MSG_FRAME);
+                notes[i].setPoints(points);
+            }
+            /* Input note was hold */
+            else if (notes[i].getNoteType().equals("Hold")) {
+                /* input was first press */
+                if (!notes[i].isBeenPressed()) {
+                    System.out.println("beforeA" + notes[i]);
+                    notes[i].setPressed(true);
+                    notes[i].setStartMsgFrame(frameNum);
+                    notes[i].setEndMsgFrame(frameNum + MSG_FRAME);
+                    notes[i].setPoints(points);
+                    System.out.println("AfterA" + notes[i]);
+                }
+                /* input was release */
+                else if (notes[i].isBeenPressed() &&!notes[i].isBeenReleased()) {
+                    System.out.println("beforeB" + notes[i]);
+                    notes[i].setStartMsgFrame(frameNum);
+                    notes[i].setEndMsgFrame(frameNum + MSG_FRAME);
+                    notes[i].setPoints(points);
+                    notes[i].setBeenReleased(true);
+                    System.out.println("AfterB" + notes[i]);
+                }
+            }
+        }
+        return notes[i];
+    }
+    private String receivedType(Input input) {
+        if (input.wasPressed(Keys.UP) || input.wasPressed(Keys.DOWN) ||
+                input.wasPressed(Keys.LEFT) || input.wasPressed(Keys.RIGHT)) {
+            return "Pressed";
+        } else if (input.wasReleased(Keys.UP) || input.wasReleased(Keys.DOWN) ||
+                input.wasReleased(Keys.LEFT) || input.wasReleased(Keys.RIGHT)) {
+            return "Released";
+        }  else {
+            return null;
+        }
+    }
+    private void printScoreMsg(int frameNum) {
+        for (int i = 4; i < worldLength; i++) {
+            if (frameNum <= notes[i].getEndMsgFrame() && frameNum >= notes[i].getStartMsgFrame()) {
+                int points = notes[i].getPoints();
+                printMsg(points);
+            }
+        }
+    }
+    private String receivedInput(Input input) {
+        if (input.wasPressed(Keys.UP)) {
+            return "Up";
+        } else if (input.wasPressed(Keys.DOWN)) {
+            return "Down";
+        } else if ((input.wasPressed(Keys.LEFT))) {
+            return "Left";
+        } else if (input.wasPressed(Keys.RIGHT)) {
+            return "Right";
+        } else {
+            return null;
+        }
+    }
+    private void printMsg(int points) {
+
+        if (points == 10) {
+            messageFont.drawString("PERFECT",
+                    Window.getWidth()/2.0 - messageFont.getWidth("PERFECT")/2, Window.getHeight()/2.0);
+        } else if (points == 5) {
+            messageFont.drawString("GOOD",
+                    Window.getWidth()/2.0 - messageFont.getWidth("GOOD")/2, Window.getHeight()/2.0);
+        } else if (points == -1) {
+            messageFont.drawString("BAD",
+                    Window.getWidth()/2.0 - messageFont.getWidth("BAD")/2, Window.getHeight()/2.0);
+        } else if (points == -5) {
+            messageFont.drawString("MISS",
+                    Window.getWidth()/2.0 - messageFont.getWidth("MISS")/2, Window.getHeight()/2.0);
+        }
+
+    }
+    private int calcPoints(int dist) {
+        int points;
+        if (dist <= 15) {
+            points = 10;
+        } else if (dist <= 50) {
+            points = 5;
+        } else if (dist <= 100) {
+            points = -1;
+        } else if (dist <= 200){
+            points = -5;
+        } else {
+            /* the input does not count, not close to any note */
+            points = 0;
+        }
+        return points;
+    }
+    private int distance(int noteY, int stationaryY) {
+        return Math.abs(noteY - stationaryY);
+    }
+    private Note drawNote(Note note, int x, int y) {
+        if (note.getNoteType().equals("Normal")) {
+            if (note.getNoteDirection().equals("Down")) {
+                NOTE_DOWN.draw(x, y);
+            } else if (note.getNoteDirection().equals("Up")) {
+                NOTE_UP.draw(x, y);
+            } else if (note.getNoteDirection().equals("Left")) {
+                NOTE_LEFT.draw(x, y);
+            } else {
+                NOTE_RIGHT.draw(x, y);
+            }
+        } else {
+            if (note.getNoteDirection().equals("Down")) {
+                HOLD_DOWN.draw(x, y);
+            } else if (note.getNoteDirection().equals("Up")) {
+                HOLD_UP.draw(x, y);
+            } else if (note.getNoteDirection().equals("Left")) {
+                HOLD_LEFT.draw(x, y);
+            } else {
+                HOLD_RIGHT.draw(x, y);
+            }
+        }
+
+        /* Update the new coordinates of the note for movement */
+        Point newCoord = new Point(note.getNoteCoord().x, note.getNoteCoord().y + NOTE_SPEED);
+        note = new Note(note.getNoteType(), note.getNoteDirection(),
+                newCoord, note.getNoteFrame(), note.isBeenPressed(), note.getPoints(),
+                note.getStartMsgFrame(), note.getEndMsgFrame(), note.isBeenReleased());
+        return note;
+    }
+    private void storeNotes() {
+        for (int i = 4; i < worldLength; i++) {
+            int noteFrame = Integer.parseInt(worldInfo[i][2]);
+            String noteType = worldInfo[i][1];
+            String noteDirection = worldInfo[i][0];
+            Point noteCoord;
+            if (noteType.equals("Normal")) {
+                noteCoord = new Point(getNoteX(noteDirection), NOTE_Y);
+            } else {
+                /* noteType.equals("Hold") */
+                noteCoord = new Point(getNoteX(noteDirection), HOLD_Y);
+            }
+            Note note = new Note(noteType, noteDirection, noteCoord, noteFrame, false, 0, 0,0, false);
+            notes[i] = note;
+        }
+    }
+    private void drawLanes() {
+        LANE_LEFT.draw(Integer.parseInt(worldInfo[0][2]), LANE_Y);
+        LANE_RIGHT.draw(Integer.parseInt(worldInfo[1][2]), LANE_Y);
+        LANE_UP.draw(Integer.parseInt(worldInfo[2][2]), LANE_Y);
+        LANE_DOWN.draw(Integer.parseInt(worldInfo[3][2]), LANE_Y);
+    }
+    private void drawMenu() {
+        bigFont.drawString("SHADOW DANCE", shadowDance.x, shadowDance.y);
+        smallFont.drawString("PRESS SPACE TO START", shadowDance.x + 100, shadowDance.y + 190);
+        smallFont.drawString("USE ARROW KEYS TO PLAY", shadowDance.x + 100, shadowDance.y + 220);
+    }
+    private int getNoteX(String noteDirection) {
+        if (noteDirection.equals("Down")) {
+            return Integer.parseInt(worldInfo[3][2]);
+        } else if (noteDirection.equals("Up")) {
+            return Integer.parseInt(worldInfo[2][2]);
+        } else if (noteDirection.equals("Left")) {
+            return Integer.parseInt(worldInfo[0][2]);
+        } else {
+            return Integer.parseInt(worldInfo[1][2]);
+        }
+    }
+}
+
+import bagel.util.Point;
+
+public class Note {
+    private String noteType;
+    private String noteDirection;
+    private Point noteCoord;
+    private int noteFrame;
+    private boolean beenPressed;
+    private int points;
+    /* points given when note was pressed */
+    private int holdState = 0;
+    /* 0: Not yet touched
+       1: First press
+       2: 2nd press
+     */
+
+    private int startMsgFrame;
+    private int endMsgFrame;
+
+    private boolean beenReleased;
+
+    @Override
+    public String toString() {
+        return "Note{" +
+                "noteType='" + noteType + '\'' +
+                ", noteDirection='" + noteDirection + '\'' +
+                ", noteCoord=" + noteCoord +
+                ", noteFrame=" + noteFrame +
+                ", beenPressed=" + beenPressed +
+                ", points=" + points +
+                ", startMsgFrame=" + startMsgFrame +
+                ", endMsgFrame=" + endMsgFrame +
+                ", beenReleased=" + beenReleased +
+                '}';
+    }
+
+    public Note(String noteType, String noteDirection, Point noteCoord, int noteFrame,
+                boolean beenPressed, int points, int startMsgFrame, int endMsgFrame, boolean beenReleased) {
+        this.noteType = noteType;
+        this.noteDirection = noteDirection;
+        this.noteCoord = noteCoord;
+        this.noteFrame = noteFrame;
+        this.beenPressed = beenPressed;
+        this.points = points;
+        this.startMsgFrame = startMsgFrame;
+        this.endMsgFrame = endMsgFrame;
+        this.beenReleased = beenReleased;
+    }
+
+    public boolean isBeenReleased() {
+        return beenReleased;
+    }
+
+    public void setBeenReleased(boolean beenReleased) {
+        this.beenReleased = beenReleased;
+    }
+
+    public int getPoints() {
+        return points;
+    }
+
+    public void setPoints(int points) {
+        this.points = points;
+    }
+
+    public void setNoteType(String noteType) {
+        this.noteType = noteType;
+    }
+
+    public void setNoteDirection(String noteDirection) {
+        this.noteDirection = noteDirection;
+    }
+
+    public void setNoteCoord(Point noteCoord) {
+        this.noteCoord = noteCoord;
+    }
+
+    public void setNoteFrame(int noteFrame) {
+        this.noteFrame = noteFrame;
+    }
+
+    public void setBeenPressed(boolean beenPressed) {
+        this.beenPressed = beenPressed;
+    }
+
+    public int getStartMsgFrame() {
+        return startMsgFrame;
+    }
+
+    public void setStartMsgFrame(int startMsgFrame) {
+        this.startMsgFrame = startMsgFrame;
+    }
+
+    public int getEndMsgFrame() {
+        return endMsgFrame;
+    }
+
+    public void setEndMsgFrame(int endMsgFrame) {
+        this.endMsgFrame = endMsgFrame;
+    }
+
+    public int getNoteFrame() {
+        return noteFrame;
+    }
+
+    public String getNoteType() {
+        return noteType;
+    }
+
+
+    public String getNoteDirection() {
+        return noteDirection;
+    }
+
+    public Point getNoteCoord() {
+        return noteCoord;
+    }
+
+    public boolean isBeenPressed() {
+        return beenPressed;
+    }
+
+    public void setPressed(boolean pressed) {
+        this.beenPressed = pressed;
+    }
+
+
+}

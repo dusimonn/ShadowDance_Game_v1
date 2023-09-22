@@ -1,0 +1,8 @@
+Lane,Left,282
+Lane,Right,742
+Lane,Up,432
+Lane,Down,592
+Down,Hold,100
+Up,Hold,200
+Down,Normal,300
+Up,Normal,350
